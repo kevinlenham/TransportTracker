@@ -1,0 +1,3 @@
+# Modular monolith instead of separate services with Redis and Service Bus
+
+The original design split the system into an ingestion service, Redis (to compare each feed poll against the last one) and Azure Service Bus (feeding a notification service). We replaced it with one ASP.NET Core app containing the API, the poller and the Timetable importer, with Postgres as the only store. There's one poller and one consumer, so the extra services added cost (Azure Cache for Redis has no free tier) and operational work for no benefit. The app keeps clean internal module boundaries, so Service Bus can go in behind the poller when V2 push notifications or extra load justify it.
