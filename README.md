@@ -52,10 +52,11 @@ TfNSW static GTFS ──(nightly)──────┤
 - **API key:** stays server-side only, in App Service config or Key Vault. The browser never calls TfNSW directly.
 - **No Redis or Service Bus:** they can be added once load justifies them ([ADR 0001](./docs/adr/0001-modular-monolith.md)).
 
-## Hosting (Azure)
+## Hosting
 
-- **App Service B1:** runs the API and poller. Always On is required for the poller.
+- **App Service B1 (Azure):** runs the API and poller. Always On is required for the poller.
 - **Azure Database for PostgreSQL Flexible Server B1ms**
+- **Vercel:** hosts the React PWA as static files. The API allows the Vercel domain through CORS ([ADR 0004](./docs/adr/0004-pwa-hosted-on-vercel.md)).
 
 ## Engineering
 

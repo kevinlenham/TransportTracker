@@ -1,1 +1,30 @@
+# Claude Code local settings
 .claude/settings.local.json
+
+# Secrets
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+
+# .NET build output
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+
+# Node / frontend
+node_modules/
+dist/
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Downloaded GTFS data
+data/gtfs/
+*.gtfs.zip
