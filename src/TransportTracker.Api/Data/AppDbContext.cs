@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TransportTracker.Api.Poller;
 using TransportTracker.Api.Timetable;
 using Route = TransportTracker.Api.Timetable.Route;
 
@@ -12,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ServiceCalendar> ServiceCalendars => Set<ServiceCalendar>();
     public DbSet<Trip> Trips => Set<Trip>();
     public DbSet<StopTime> StopTimes => Set<StopTime>();
+    public DbSet<Observation> Observations => Set<Observation>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -52,6 +54,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.ToTable("stop_times");
             e.HasKey(x => new { x.ImportId, x.TripId, x.StopSequence });
             e.HasIndex(x => new { x.ImportId, x.StopId });
+        });
+
+        b.Entity<Observation>(e =>
+        {
+            e.ToTable("observations");
+            e.Property(x => x.Status).HasConversion<string>();
+            // One Observation per call at a Station. A Trip can call at a Station twice, hence scheduled_at.
+            e.HasIndex(x => new { x.ServiceDate, x.TripId, x.StationId, x.ScheduledAt }).IsUnique();
+            // For the stats: each Station over a time window.
+            e.HasIndex(x => new { x.StationId, x.ScheduledAt });
         });
     }
 }

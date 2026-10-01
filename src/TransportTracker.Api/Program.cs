@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using TransportTracker.Api.Data;
+using TransportTracker.Api.Poller;
 using TransportTracker.Api.Tfnsw;
 using TransportTracker.Api.Timetable;
 
@@ -25,6 +26,11 @@ builder.Services.AddScoped<IGtfsSource, TfnswGtfsSource>();
 builder.Services.AddScoped<TimetableImporter>();
 builder.Services.AddHostedService<TimetableImportService>();
 
+builder.Services.AddSingleton<IRealtimeFeed, TfnswRealtimeFeed>();
+builder.Services.AddSingleton<PollerStatus>();
+builder.Services.AddScoped<ObservationRecorder>();
+builder.Services.AddHostedService<PollerService>();
+
 var app = builder.Build();
 
 // Single instance, so applying migrations on startup is safe.
@@ -35,13 +41,13 @@ await using (var scope = app.Services.CreateAsyncScope())
 
 var v1 = app.MapGroup("/v1");
 
-v1.MapGet("/health", async (AppDbContext db) =>
+v1.MapGet("/health", async (AppDbContext db, PollerStatus poller) =>
 {
     var timetable = await db.TimetableImports.AsNoTracking()
         .Where(i => i.IsActive)
         .Select(i => new { i.Id, i.ImportedAt, i.SourceLastModified, i.StopTimeCount })
         .SingleOrDefaultAsync();
-    return Results.Ok(new { status = "ok", timetable });
+    return Results.Ok(new { status = "ok", timetable, poller = new { poller.LastPollAt } });
 });
 
 app.Run();

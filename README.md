@@ -77,7 +77,7 @@ dotnet user-secrets set "Tfnsw:ApiKey" "<key>" --project src/TransportTracker.Ap
 dotnet run --project src/TransportTracker.Api
 ```
 
-On startup the API applies migrations and imports the static Timetable. After that it re-imports nightly at 03:00 Sydney time. `GET /v1/health` shows the active Timetable.
+On startup the API applies migrations and imports the static Timetable. After that it re-imports nightly at 03:00 Sydney time. It also polls the realtime feed every 30s and records Observations to the `observations` table. `GET /v1/health` shows the active Timetable and when the last poll succeeded.
 
 ```sh
 dotnet test                               # integration tests start their own Postgres via Testcontainers
