@@ -27,4 +27,5 @@ Thumbs.db
 
 # Downloaded GTFS data
 data/gtfs/
+data/feed-samples/
 *.gtfs.zip

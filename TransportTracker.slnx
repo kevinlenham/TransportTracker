@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TransportTracker.Api/TransportTracker.Api.csproj" />
+    <Project Path="src/TransportTracker.GtfsRealtime/TransportTracker.GtfsRealtime.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/FeedProbe/FeedProbe.csproj" />
+  </Folder>
+</Solution>
