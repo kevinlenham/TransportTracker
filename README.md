@@ -66,3 +66,21 @@ TfNSW static GTFS ──(nightly)──────┤
   - integration tests against a real Postgres (Testcontainers)
 - **Deferred:** monitoring. Before the stats are trusted, add at least an alert for when the poller stops writing Observations. A silent gap would skew the 3-week window.
 - **Start the poller early:** TfNSW doesn't publish realtime history, so the stats can only build up from the day the poller starts.
+
+## Local development
+
+Prerequisites: .NET 10 SDK, and Docker Desktop (which needs WSL 2 on Windows).
+
+```sh
+docker compose up -d                      # local Postgres
+dotnet user-secrets set "Tfnsw:ApiKey" "<key>" --project src/TransportTracker.Api
+dotnet run --project src/TransportTracker.Api
+```
+
+On startup the API applies migrations and imports the static Timetable. After that it re-imports nightly at 03:00 Sydney time. `GET /v1/health` shows the active Timetable.
+
+```sh
+dotnet test                               # integration tests start their own Postgres via Testcontainers
+dotnet run --project tools/FeedProbe -- 60  # record 60 min of realtime feed into data/feed-samples/
+dotnet tool restore && dotnet ef migrations add <Name> --project src/TransportTracker.Api -o Data/Migrations
+```
