@@ -4,6 +4,7 @@
 # Secrets
 .env
 .env.*
+.azureinfo
 !.env.example
 appsettings.*.local.json
 
