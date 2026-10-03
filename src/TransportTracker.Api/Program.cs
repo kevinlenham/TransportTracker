@@ -21,6 +21,16 @@ builder.Services.AddHttpClient(TfnswOptions.HttpClientName, (sp, http) =>
     http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("apikey", options.ApiKey);
     http.Timeout = TimeSpan.FromMinutes(5);
 });
+builder.Services.AddHttpClient(TfnswOptions.RealtimeHttpClientName, (sp, http) =>
+{
+    var options = sp.GetRequiredService<IOptions<TfnswOptions>>().Value;
+    http.BaseAddress = new Uri(options.BaseUrl);
+    http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("apikey", options.ApiKey);
+    http.Timeout = TimeSpan.FromSeconds(20);
+})
+    // Connections idle between 30s polls can be silently dropped by the network, and a request sent
+    // on one hangs until the timeout. Don't reuse them.
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15) });
 
 builder.Services.AddScoped<IGtfsSource, TfnswGtfsSource>();
 builder.Services.AddScoped<TimetableImporter>();

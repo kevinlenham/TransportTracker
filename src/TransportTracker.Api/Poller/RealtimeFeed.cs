@@ -13,7 +13,7 @@ public class TfnswRealtimeFeed(IHttpClientFactory httpFactory, IOptions<TfnswOpt
 {
     public async Task<FeedMessage> FetchAsync(CancellationToken ct)
     {
-        var http = httpFactory.CreateClient(TfnswOptions.HttpClientName);
+        var http = httpFactory.CreateClient(TfnswOptions.RealtimeHttpClientName);
         var bytes = await http.GetByteArrayAsync(options.Value.RealtimeTripUpdatesPath, ct);
         return FeedMessage.Parser.ParseFrom(bytes);
     }

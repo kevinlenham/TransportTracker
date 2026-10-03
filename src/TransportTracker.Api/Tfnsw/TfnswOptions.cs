@@ -4,6 +4,8 @@ public class TfnswOptions
 {
     public const string SectionName = "Tfnsw";
     public const string HttpClientName = "tfnsw";
+    /// <summary>Short-timeout client for the realtime feed, so a hung request can't stall the poller.</summary>
+    public const string RealtimeHttpClientName = "tfnsw-realtime";
 
     public string BaseUrl { get; set; } = "https://api.transport.nsw.gov.au/";
     /// <summary>Kept server-side only: user-secrets locally, App Service config or Key Vault in Azure.</summary>

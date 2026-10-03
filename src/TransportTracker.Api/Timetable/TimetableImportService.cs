@@ -23,7 +23,8 @@ public class TimetableImportService(IServiceScopeFactory scopes, TimeProvider ti
                 await scope.ServiceProvider.GetRequiredService<TimetableImporter>().ImportAsync(stoppingToken);
                 wait = DelayUntilNextRun(time.GetUtcNow());
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // An HttpClient timeout is also an OperationCanceledException, so check the token, not the type.
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Timetable import failed, retrying in {RetryAfter}", RetryAfter);
                 wait = RetryAfter;

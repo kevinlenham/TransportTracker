@@ -35,7 +35,8 @@ public class PollerService(IServiceScopeFactory scopes, IRealtimeFeed feed, Poll
                 await scope.ServiceProvider.GetRequiredService<ObservationRecorder>().RecordAsync(changes, stoppingToken);
                 status.LastPollAt = time.GetUtcNow();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // An HttpClient timeout is also an OperationCanceledException, so check the token, not the type.
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Realtime poll failed");
             }
