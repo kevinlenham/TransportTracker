@@ -28,7 +28,7 @@ public class DelayTrackerTests
         var changes = tracker.Update(Feed(T0 + 60, Trip("T1", T0 + 60, Stop("B", delay: 50))));
 
         var passed = Assert.Single(changes.Passed);
-        Assert.Equal(new PassedStop("T1", "A", 30, null, false), passed);
+        Assert.Equal(new LiveStop("T1", "A", 30, null, false), passed);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(T0 + 60), changes.FeedTime);
     }
 
@@ -81,8 +81,8 @@ public class DelayTrackerTests
 
         var changes = tracker.Update(Feed(T0 + 30, Trip("T1", T0 + 30, Stop("C"))));
 
-        Assert.Contains(new PassedStop("T1", "A", null, null, true), changes.Passed);
-        Assert.Contains(new PassedStop("T1", "B", null, T0 + 20, false), changes.Passed);
+        Assert.Contains(new LiveStop("T1", "A", null, null, true), changes.Passed);
+        Assert.Contains(new LiveStop("T1", "B", null, T0 + 20, false), changes.Passed);
     }
 
     private static FeedMessage Feed(long timestamp, params TripUpdate[] trips)

@@ -67,7 +67,7 @@ public class ObservationRecorder(AppDbContext db, TimeProvider time, ILogger<Obs
         return inserted;
     }
 
-    private static Observation? ToObservation(PassedStop stop, string station, IEnumerable<TimetabledStop> tripStops,
+    private static Observation? ToObservation(LiveStop stop, string station, IEnumerable<TimetabledStop> tripStops,
         DateTimeOffset feedTime, DateTimeOffset recordedAt)
     {
         // A platform change keeps the Station, so match on that rather than the platform.

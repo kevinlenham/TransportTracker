@@ -1,6 +1,6 @@
 namespace TransportTracker.Api.Poller;
 
-/// <summary>When the poller last got through a poll, for the health check.</summary>
+/// <summary>What the poller last saw, for the health check and the departure board.</summary>
 public class PollerStatus
 {
     /// <summary>Six missed polls. Any longer and the gap starts to cost Observations.</summary>
@@ -9,6 +9,15 @@ public class PollerStatus
     private long _lastPollTicks;
 
     public bool IsHealthy(DateTimeOffset now) => LastPollAt is { } last && now - last <= StaleAfter;
+
+    private LiveFeed? _live;
+
+    /// <summary>The feed as of the latest poll, for the departure board. Null until the first poll.</summary>
+    public LiveFeed? Live
+    {
+        get => Volatile.Read(ref _live);
+        set => Volatile.Write(ref _live, value);
+    }
 
     public DateTimeOffset? LastPollAt
     {
@@ -36,6 +45,7 @@ public class PollerService(IServiceScopeFactory scopes, IRealtimeFeed feed, Poll
             try
             {
                 var changes = _tracker.Update(await feed.FetchAsync(stoppingToken));
+                status.Live = _tracker.Live;
                 await using var scope = scopes.CreateAsyncScope();
                 await scope.ServiceProvider.GetRequiredService<ObservationRecorder>().RecordAsync(changes, stoppingToken);
                 status.LastPollAt = time.GetUtcNow();

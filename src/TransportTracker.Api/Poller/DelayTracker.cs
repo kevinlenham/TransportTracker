@@ -4,11 +4,23 @@ using TripRelationship = TransitRealtime.TripDescriptor.Types.ScheduleRelationsh
 
 namespace TransportTracker.Api.Poller;
 
-/// <summary>The last Live Delay seen for a Trip at a stop before the stop left the feed.</summary>
-public record PassedStop(string TripId, string StopId, int? DelaySeconds, long? PredictedTime, bool Skipped);
+/// <summary>
+/// The Live Delay the feed gives for a Trip at a stop. Once the stop leaves the feed, its last
+/// LiveStop is what gets recorded as the Observation.
+/// </summary>
+public record LiveStop(string TripId, string StopId, int? DelaySeconds, long? PredictedTime, bool Skipped);
 
 /// <summary>What changed between the previous poll and this one.</summary>
-public record FeedChanges(DateTimeOffset FeedTime, IReadOnlyList<PassedStop> Passed, IReadOnlyList<string> CancelledTrips);
+public record FeedChanges(DateTimeOffset FeedTime, IReadOnlyList<LiveStop> Passed, IReadOnlyList<string> CancelledTrips);
+
+/// <summary>
+/// The feed as of one poll: each trusted Trip's upcoming stops by stop ID, and the cancelled Trips.
+/// A Trip that's in Trips but has no entry for a stop has already passed it. Ghost Trips are left out.
+/// </summary>
+public record LiveFeed(
+    DateTimeOffset FeedTime,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, LiveStop>> Trips,
+    IReadOnlySet<string> CancelledTrips);
 
 /// <summary>
 /// Follows each Trip's stops across polls and reports the ones that have dropped out (ADR 0002).
@@ -21,15 +33,15 @@ public class DelayTracker
     /// <summary>A TripUpdate older than this, relative to the feed, is a ghost and is never trusted.</summary>
     public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(5);
 
-    private Dictionary<string, Dictionary<string, PassedStop>> _trips = [];
+    private Dictionary<string, IReadOnlyDictionary<string, LiveStop>> _trips = [];
     private HashSet<string> _cancelled = [];
 
     public FeedChanges Update(FeedMessage feed)
     {
         var feedTime = (long)feed.Header.Timestamp;
-        var passed = new List<PassedStop>();
+        var passed = new List<LiveStop>();
         var newlyCancelled = new List<string>();
-        var trips = new Dictionary<string, Dictionary<string, PassedStop>>();
+        var trips = new Dictionary<string, IReadOnlyDictionary<string, LiveStop>>();
         var cancelled = new HashSet<string>();
         var present = new HashSet<string>();
 
@@ -49,12 +61,12 @@ public class DelayTracker
                 continue;
             }
 
-            var stops = new Dictionary<string, PassedStop>();
+            var stops = new Dictionary<string, LiveStop>();
             foreach (var stu in update.StopTimeUpdate)
             {
                 if (!stu.HasStopId) continue;
                 var evt = stu.Arrival ?? stu.Departure;
-                stops[stu.StopId] = new PassedStop(
+                stops[stu.StopId] = new LiveStop(
                     tripId,
                     stu.StopId,
                     DelaySeconds: evt?.HasDelay == true ? evt.Delay : null,
@@ -75,6 +87,11 @@ public class DelayTracker
 
         _trips = trips;
         _cancelled = cancelled;
-        return new FeedChanges(DateTimeOffset.FromUnixTimeSeconds(feedTime), passed, newlyCancelled);
+        // Both collections are replaced, never changed, so the snapshot is safe to share across threads.
+        Live = new LiveFeed(DateTimeOffset.FromUnixTimeSeconds(feedTime), trips, cancelled);
+        return new FeedChanges(Live.FeedTime, passed, newlyCancelled);
     }
+
+    /// <summary>The feed as of the latest Update, or null before the first.</summary>
+    public LiveFeed? Live { get; private set; }
 }

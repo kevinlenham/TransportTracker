@@ -1,8 +1,11 @@
 using System.Net.Http.Headers;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using TransportTracker.Api.Data;
 using TransportTracker.Api.Poller;
+using TransportTracker.Api.Stations;
+using TransportTracker.Api.Stats;
 using TransportTracker.Api.Tfnsw;
 using TransportTracker.Api.Timetable;
 
@@ -41,6 +44,10 @@ builder.Services.AddSingleton<PollerStatus>();
 builder.Services.AddScoped<ObservationRecorder>();
 builder.Services.AddHostedService<PollerService>();
 
+builder.Services.AddScoped<LateStatsQuery>();
+builder.Services.AddScoped<DepartureBoard>();
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
 var app = builder.Build();
 
 // Single instance, so applying migrations on startup is safe.
@@ -63,5 +70,7 @@ v1.MapGet("/health", async (AppDbContext db, PollerStatus poller, TimeProvider t
     var body = new { status = healthy ? "ok" : "unhealthy", timetable, poller = new { poller.LastPollAt } };
     return healthy ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
 });
+
+v1.MapStations();
 
 app.Run();

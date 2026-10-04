@@ -1,0 +1,178 @@
+using TransportTracker.Api.Data;
+using TransportTracker.Api.Poller;
+using TransportTracker.Api.Stations;
+using TransportTracker.Api.Stats;
+using TransportTracker.Api.Timetable;
+using Route = TransportTracker.Api.Timetable.Route;
+
+namespace TransportTracker.Tests.Stations;
+
+public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<PostgresFixture>
+{
+    private static readonly TimeSpan Aest = TimeSpan.FromHours(10);
+    private static readonly DateTimeOffset Now = At(10, 0); // Thursday 1 Oct 2026
+
+    [Fact]
+    public async Task TimetableIsOverlaidWithLiveDelaysInExpectedOrder()
+    {
+        await using var db = await SeededAsync();
+        var live = Live(
+            trips: new()
+            {
+                ["LIVE"] = [new LiveStop("LIVE", "2000323", 300, null, false)],
+                ["PLAT"] = [new LiveStop("PLAT", "2000324", 0, null, false)],
+                ["GONE"] = [new LiveStop("GONE", "2135238", 60, null, false)],
+            },
+            cancelled: ["CANX"]);
+
+        var board = await Board(db, live);
+
+        Assert.Equal("Central Station", board.Station.Name);
+        Assert.Equal(["LIVE", "CANX", "PLAT", "SCHED"], board.Departures.Select(d => d.TripId));
+
+        var delayed = board.Departures[0];
+        Assert.Equal((DepartureStatus.Live, 300, At(9, 58), At(10, 3)),
+            (delayed.Status, delayed.DelaySeconds, delayed.ScheduledAt, delayed.ExpectedAt));
+        Assert.Equal(("T8", "F99D1C", "Macarthur"), (delayed.Line, delayed.LineColor, delayed.Headsign));
+
+        Assert.Equal(DepartureStatus.Cancelled, board.Departures[1].Status);
+        Assert.Equal(("2000324", "Central Station Platform 4"), (board.Departures[2].PlatformId, board.Departures[2].PlatformName));
+        Assert.Equal((DepartureStatus.Scheduled, (int?)null), (board.Departures[3].Status, board.Departures[3].DelaySeconds));
+    }
+
+    [Fact]
+    public async Task DelayIsWorkedOutFromThePredictedTimeWhenTheFeedLeavesItOut()
+    {
+        await using var db = await SeededAsync();
+        var predicted = At(10, 20).AddSeconds(90).ToUnixTimeSeconds();
+
+        var board = await Board(db, Live(new() { ["SCHED"] = [new LiveStop("SCHED", "2000323", null, predicted, false)] }));
+
+        var d = board.Departures.Single(d => d.TripId == "SCHED");
+        Assert.Equal((90, At(10, 21).AddSeconds(30)), (d.DelaySeconds, d.ExpectedAt));
+    }
+
+    [Fact]
+    public async Task EachDepartureCarriesTheLatePercentForItsStatsBucket()
+    {
+        await using var db = await SeededAsync();
+        var lastWeek = At(11, 0).AddDays(-7); // Thursday off-peak, like the departures
+        for (var i = 0; i < 20; i++)
+        {
+            db.Observations.Add(new Observation
+            {
+                ServiceDate = new DateOnly(2026, 9, 24), TripId = $"OBS{i}", RouteId = "APS_1a", Line = "T8", DirectionId = 1,
+                StopId = "2000323", StationId = "200060", ScheduledAt = lastWeek.AddMinutes(i).ToUniversalTime(),
+                DelaySeconds = i < 5 ? 300 : 0, Status = ObservationStatus.Passed, RecordedAt = lastWeek.ToUniversalTime(),
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var board = await Board(db, live: null);
+
+        Assert.All(board.Departures, d =>
+            Assert.Equal(new LateChance(TimeBand.OffPeak, 25.0, 20, LateStatsQuery.MinimumSample), d.Late));
+    }
+
+    [Fact]
+    public async Task WithoutAPollYetTheTimetableIsShownAsScheduled()
+    {
+        await using var db = await SeededAsync();
+
+        var board = await Board(db, live: null);
+
+        Assert.Equal(["CANX", "PLAT", "SCHED"], board.Departures.Select(d => d.TripId));
+        Assert.All(board.Departures, d => Assert.Equal(DepartureStatus.Scheduled, d.Status));
+        Assert.Null(board.FeedTime);
+    }
+
+    [Fact]
+    public async Task TripPastMidnightIsFoundOnThePreviousServiceDay()
+    {
+        await using var db = await SeededAsync();
+
+        var board = await new DepartureBoard(db, new PollerStatus(), new LateStatsQuery(db, new FixedTime(At(0, 30, day: 2))),
+            new FixedTime(At(0, 30, day: 2))).GetAsync("200060", 20, CancellationToken.None);
+
+        var d = Assert.Single(board!.Departures);
+        Assert.Equal(("NIGHT", At(0, 45, day: 2)), (d.TripId, d.ScheduledAt));
+    }
+
+    [Fact]
+    public async Task UnknownStationIsNotFound()
+    {
+        await using var db = await SeededAsync();
+
+        Assert.Null(await new DepartureBoard(db, new PollerStatus(), new LateStatsQuery(db, new FixedTime(Now)), new FixedTime(Now))
+            .GetAsync("2000323", 20, CancellationToken.None)); // A platform, not a Station.
+    }
+
+    private static DateTimeOffset At(int hour, int minute, int day = 1) => new(2026, 10, day, hour, minute, 0, Aest);
+
+    private static LiveFeed Live(Dictionary<string, LiveStop[]> trips, string[]? cancelled = null) => new(
+        Now,
+        trips.ToDictionary(t => t.Key, t => (IReadOnlyDictionary<string, LiveStop>)t.Value.ToDictionary(s => s.StopId)),
+        (cancelled ?? []).ToHashSet());
+
+    private static async Task<Board> Board(AppDbContext db, LiveFeed? live)
+    {
+        var poller = new PollerStatus { Live = live };
+        var board = await new DepartureBoard(db, poller, new LateStatsQuery(db, new FixedTime(Now)), new FixedTime(Now))
+            .GetAsync("200060", 20, CancellationToken.None);
+        return board!;
+    }
+
+    /// <summary>
+    /// Departures from Central (platforms 3 and 4) on weekday service WD, with Now at 10:00:
+    /// OLD 09:30, GONE 09:55, LIVE 09:58, CANX 10:10, PLAT 10:15, SCHED 10:20, TERM arrives 10:30 (set-down only).
+    /// WKND 10:25 runs on weekends only. NIGHT leaves at 24:45, i.e. 00:45 the next morning.
+    /// EMPTY 10:12 and NONREV 10:14 are non-passenger runs.
+    /// </summary>
+    private async Task<AppDbContext> SeededAsync()
+    {
+        var db = await postgres.CreateDbContextAsync();
+        var import = new TimetableImport { ContentHash = "test", ImportedAt = DateTimeOffset.UtcNow, IsActive = true };
+        db.TimetableImports.Add(import);
+        await db.SaveChangesAsync();
+        var id = import.Id;
+
+        db.Stops.AddRange(
+            new Stop { ImportId = id, StopId = "200060", Name = "Central Station", LocationType = 1 },
+            new Stop { ImportId = id, StopId = "2000323", Name = "Central Station Platform 3", ParentStation = "200060" },
+            new Stop { ImportId = id, StopId = "2000324", Name = "Central Station Platform 4", ParentStation = "200060" },
+            new Stop { ImportId = id, StopId = "213510", Name = "Redfern Station", LocationType = 1 },
+            new Stop { ImportId = id, StopId = "2135238", Name = "Redfern Station Platform 8", ParentStation = "213510" });
+        db.Routes.Add(new Route { ImportId = id, RouteId = "APS_1a", ShortName = "T8", Color = "F99D1C" });
+        db.ServiceCalendars.AddRange(
+            new ServiceCalendar { ImportId = id, ServiceId = "WD", Monday = true, Tuesday = true, Wednesday = true, Thursday = true,
+                Friday = true, StartDate = new DateOnly(2026, 9, 1), EndDate = new DateOnly(2026, 12, 31) },
+            new ServiceCalendar { ImportId = id, ServiceId = "WE", Saturday = true, Sunday = true,
+                StartDate = new DateOnly(2026, 9, 1), EndDate = new DateOnly(2026, 12, 31) });
+
+        void Departs(string trip, int hour, int minute, string service = "WD", short pickupType = 0,
+            string headsign = "Macarthur", string route = "APS_1a")
+        {
+            db.Trips.Add(new Trip { ImportId = id, TripId = trip, RouteId = route, ServiceId = service, Headsign = headsign, DirectionId = 1 });
+            var seconds = hour * 3600 + minute * 60;
+            db.StopTimes.Add(new StopTime { ImportId = id, TripId = trip, StopSequence = 1, StopId = "2000323",
+                ArrivalSeconds = seconds, DepartureSeconds = seconds, PickupType = pickupType });
+            db.StopTimes.Add(new StopTime { ImportId = id, TripId = trip, StopSequence = 2, StopId = "2135238",
+                ArrivalSeconds = seconds + 300, DepartureSeconds = seconds + 300 });
+        }
+
+        Departs("OLD", 9, 30);
+        Departs("GONE", 9, 55);
+        Departs("LIVE", 9, 58);
+        Departs("CANX", 10, 10);
+        Departs("PLAT", 10, 15);
+        Departs("SCHED", 10, 20);
+        Departs("TERM", 10, 30, pickupType: 1);
+        Departs("WKND", 10, 25, service: "WE");
+        Departs("NIGHT", 24, 45);
+        Departs("EMPTY", 10, 12, headsign: "Empty Train");
+        Departs("NONREV", 10, 14, route: "RTTA_REV");
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        return db;
+    }
+}
