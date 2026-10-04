@@ -3,7 +3,12 @@ namespace TransportTracker.Api.Poller;
 /// <summary>When the poller last got through a poll, for the health check.</summary>
 public class PollerStatus
 {
+    /// <summary>Six missed polls. Any longer and the gap starts to cost Observations.</summary>
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(3);
+
     private long _lastPollTicks;
+
+    public bool IsHealthy(DateTimeOffset now) => LastPollAt is { } last && now - last <= StaleAfter;
 
     public DateTimeOffset? LastPollAt
     {

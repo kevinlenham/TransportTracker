@@ -23,6 +23,20 @@ public class PollerServiceTests
         await poller.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public void StatusIsUnhealthyBeforeTheFirstPoll() =>
+        Assert.False(new PollerStatus().IsHealthy(DateTimeOffset.UtcNow));
+
+    [Fact]
+    public void StatusIsHealthyUntilTheLastPollGoesStale()
+    {
+        var lastPoll = DateTimeOffset.UtcNow;
+        var status = new PollerStatus { LastPollAt = lastPoll };
+
+        Assert.True(status.IsHealthy(lastPoll + PollerStatus.StaleAfter));
+        Assert.False(status.IsHealthy(lastPoll + PollerStatus.StaleAfter + TimeSpan.FromSeconds(1)));
+    }
+
     private class TimingOutFeed : IRealtimeFeed
     {
         public TaskCompletionSource Called { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -51,13 +51,17 @@ await using (var scope = app.Services.CreateAsyncScope())
 
 var v1 = app.MapGroup("/v1");
 
-v1.MapGet("/health", async (AppDbContext db, PollerStatus poller) =>
+// Returns 503 when Observations aren't being recorded (no Timetable, or no successful poll lately),
+// so the App Service health check alert fires before a silent gap skews the stats.
+v1.MapGet("/health", async (AppDbContext db, PollerStatus poller, TimeProvider time) =>
 {
     var timetable = await db.TimetableImports.AsNoTracking()
         .Where(i => i.IsActive)
         .Select(i => new { i.Id, i.ImportedAt, i.SourceLastModified, i.StopTimeCount })
         .SingleOrDefaultAsync();
-    return Results.Ok(new { status = "ok", timetable, poller = new { poller.LastPollAt } });
+    var healthy = timetable is not null && poller.IsHealthy(time.GetUtcNow());
+    var body = new { status = healthy ? "ok" : "unhealthy", timetable, poller = new { poller.LastPollAt } };
+    return healthy ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 app.Run();
