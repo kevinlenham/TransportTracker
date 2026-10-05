@@ -92,10 +92,44 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
         await using var db = await SeededAsync();
 
         var board = await new DepartureBoard(db, new PollerStatus(), new LateStatsQuery(db, new FixedTime(At(0, 30, day: 2))),
-            new FixedTime(At(0, 30, day: 2))).GetAsync("200060", 20, CancellationToken.None);
+            new FixedTime(At(0, 30, day: 2))).GetAsync("200060", null, 20, CancellationToken.None);
 
         var d = Assert.Single(board!.Departures);
         Assert.Equal(("NIGHT", At(0, 45, day: 2)), (d.TripId, d.ScheduledAt));
+    }
+
+    [Fact]
+    public async Task SavedTripOnlyIncludesDirectTripsThatStopAtTheDestinationLater()
+    {
+        await using var db = await SeededAsync();
+        await AddSavedTripTripsAsync(db);
+
+        var board = await Board(db, live: null, to: "213510");
+
+        // OTHER doesn't go to Redfern, and REVERSE calls at Redfern before Central.
+        Assert.Equal(["CANX", "PLAT", "SCHED"], board.Departures.Select(d => d.TripId));
+        Assert.Equal("Redfern Station", board.Destination!.Name);
+        var arrival = board.Departures[2].Arrival!;
+        Assert.Equal(("2135238", "Redfern Station Platform 8", At(10, 25), At(10, 25)),
+            (arrival.PlatformId, arrival.PlatformName, arrival.ScheduledAt, arrival.ExpectedAt));
+    }
+
+    [Fact]
+    public async Task SavedTripArrivalUsesTheDestinationsLiveDelayOrCarriesTheDepartureDelay()
+    {
+        await using var db = await SeededAsync();
+        var live = Live(new()
+        {
+            ["LIVE"] = [new LiveStop("LIVE", "2000323", 300, null, false), new LiveStop("LIVE", "2135238", 240, null, false)],
+            ["PLAT"] = [new LiveStop("PLAT", "2000324", 120, null, false)],
+            ["SCHED"] = [new LiveStop("SCHED", "2000323", 0, null, false), new LiveStop("SCHED", "2135238", null, null, true)],
+        });
+
+        var board = await Board(db, live, to: "213510");
+
+        Assert.Equal(["LIVE", "CANX", "PLAT"], board.Departures.Select(d => d.TripId)); // SCHED skips Redfern.
+        Assert.Equal(At(10, 3).AddMinutes(4), board.Departures[0].Arrival!.ExpectedAt);
+        Assert.Equal(At(10, 22), board.Departures[2].Arrival!.ExpectedAt);
     }
 
     [Fact]
@@ -104,21 +138,40 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
         await using var db = await SeededAsync();
 
         Assert.Null(await new DepartureBoard(db, new PollerStatus(), new LateStatsQuery(db, new FixedTime(Now)), new FixedTime(Now))
-            .GetAsync("2000323", 20, CancellationToken.None)); // A platform, not a Station.
+            .GetAsync("2000323", null, 20, CancellationToken.None)); // A platform, not a Station.
     }
 
     private static DateTimeOffset At(int hour, int minute, int day = 1) => new(2026, 10, day, hour, minute, 0, Aest);
+
+    /// <summary>OTHER: Central 10:16 → Sydenham. REVERSE: Redfern 10:12 → Central 10:17.</summary>
+    private static async Task AddSavedTripTripsAsync(AppDbContext db)
+    {
+        var id = db.TimetableImports.Single(i => i.IsActive).Id;
+        db.Stops.AddRange(
+            new Stop { ImportId = id, StopId = "214510", Name = "Sydenham Station", LocationType = 1 },
+            new Stop { ImportId = id, StopId = "2145111", Name = "Sydenham Station Platform 1", ParentStation = "214510" });
+        db.Trips.AddRange(
+            new Trip { ImportId = id, TripId = "OTHER", RouteId = "APS_1a", ServiceId = "WD", DirectionId = 1 },
+            new Trip { ImportId = id, TripId = "REVERSE", RouteId = "APS_1a", ServiceId = "WD", DirectionId = 0 });
+        db.StopTimes.AddRange(
+            new StopTime { ImportId = id, TripId = "OTHER", StopSequence = 1, StopId = "2000323", DepartureSeconds = 36960 },
+            new StopTime { ImportId = id, TripId = "OTHER", StopSequence = 2, StopId = "2145111", ArrivalSeconds = 37260 },
+            new StopTime { ImportId = id, TripId = "REVERSE", StopSequence = 1, StopId = "2135238", DepartureSeconds = 36720 },
+            new StopTime { ImportId = id, TripId = "REVERSE", StopSequence = 2, StopId = "2000323", DepartureSeconds = 37020 });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
 
     private static LiveFeed Live(Dictionary<string, LiveStop[]> trips, string[]? cancelled = null) => new(
         Now,
         trips.ToDictionary(t => t.Key, t => (IReadOnlyDictionary<string, LiveStop>)t.Value.ToDictionary(s => s.StopId)),
         (cancelled ?? []).ToHashSet());
 
-    private static async Task<Board> Board(AppDbContext db, LiveFeed? live)
+    private static async Task<Board> Board(AppDbContext db, LiveFeed? live, string? to = null)
     {
         var poller = new PollerStatus { Live = live };
         var board = await new DepartureBoard(db, poller, new LateStatsQuery(db, new FixedTime(Now)), new FixedTime(Now))
-            .GetAsync("200060", 20, CancellationToken.None);
+            .GetAsync("200060", to, 20, CancellationToken.None);
         return board!;
     }
 

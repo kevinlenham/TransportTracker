@@ -83,6 +83,10 @@ API endpoints:
 |---|---|
 | `GET /v1/stations?q=central` | Stations whose name contains the query, prefix matches first |
 | `GET /v1/stations/{id}/departures?limit=20` | Next departures with Live Delay, platform and the Late % for each one's Stats Bucket (`latePercent` is null below the Minimum Sample) |
+| `GET /v1/stations/{id}/departures?to={id}` | A Saved Trip: only direct trains that stop at the second Station later, each with its `arrival` |
+| `GET /v1/lines` | Every Line's Late % and Cancellation % over 3 weeks |
+| `GET /v1/lines/{line}` | One Line by Direction, Station (in running order) and Time Band |
+| `GET /v1/alerts?stations=&lines=` | Active TfNSW service alerts, optionally only those affecting the Stations or Lines (plus network-wide ones). Polled every 2 minutes |
 | `GET /v1/health` | 503 if there's no active Timetable or no successful poll in 3 minutes |
 
 On startup the API applies migrations and imports the static Timetable. After that it re-imports nightly at 03:00 Sydney time. It also polls the realtime feed every 30s and records Observations to the `observations` table. `GET /v1/health` shows the active Timetable and when the last poll succeeded.

@@ -156,6 +156,14 @@ public class TimetableImporter(AppDbContext db, IGtfsSource source, TimeProvider
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
+
+        // Every row just changed, so refresh the planner's statistics now rather than waiting for
+        // autovacuum. With stale ones, queries against the new Timetable can pick very slow plans.
+        await using var analyze = new NpgsqlCommand("ANALYZE stop_times, trips, service_calendars, routes, stops", conn)
+        {
+            CommandTimeout = 300,
+        };
+        await analyze.ExecuteNonQueryAsync(ct);
     }
 
     private static async Task<long> CopyAsync(NpgsqlConnection conn, ZipArchive zip, string file, string copySql,

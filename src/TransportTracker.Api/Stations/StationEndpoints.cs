@@ -31,9 +31,15 @@ public static class StationEndpoints
         });
 
         // The next departures from a Station with Live Delays and Late %, e.g. /v1/stations/200060/departures.
-        v1.MapGet("/stations/{stationId}/departures", async (string stationId, int? limit, DepartureBoard board, CancellationToken ct) =>
+        // With ?to=, only direct Trips to that Station, each with its arrival: the trains for a Saved Trip.
+        v1.MapGet("/stations/{stationId}/departures", async (string stationId, string? to, int? limit, DepartureBoard board,
+            CancellationToken ct) =>
         {
-            var result = await board.GetAsync(stationId, Math.Clamp(limit ?? DefaultDepartures, 1, MaxDepartures), ct);
+            if (to == stationId)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["to"] = ["Choose a different Station to travel to."] });
+
+            var result = await board.GetAsync(stationId, string.IsNullOrEmpty(to) ? null : to,
+                Math.Clamp(limit ?? DefaultDepartures, 1, MaxDepartures), ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
         });
 

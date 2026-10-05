@@ -12,4 +12,5 @@ public class TfnswOptions
     public string ApiKey { get; set; } = "";
     public string StaticGtfsPath { get; set; } = "v1/gtfs/schedule/sydneytrains";
     public string RealtimeTripUpdatesPath { get; set; } = "v2/gtfs/realtime/sydneytrains";
+    public string RealtimeAlertsPath { get; set; } = "v2/gtfs/alerts/sydneytrains";
 }

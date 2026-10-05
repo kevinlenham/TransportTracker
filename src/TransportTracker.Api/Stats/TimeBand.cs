@@ -6,7 +6,7 @@ public enum TimeBand { AmPeak, PmPeak, OffPeak, Weekend }
 
 public static class TimeBands
 {
-    // Kept in step with the CASE in LateStatsQuery, which buckets Observations the same way in SQL.
+    // Kept in step with the observation_stats view, which buckets Observations the same way in SQL.
     public static readonly TimeOnly AmPeakStart = new(6, 30), AmPeakEnd = new(9, 30);
     public static readonly TimeOnly PmPeakStart = new(15, 0), PmPeakEnd = new(19, 0);
 

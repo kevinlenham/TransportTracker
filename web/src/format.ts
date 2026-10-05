@@ -56,6 +56,9 @@ export function lateText(late: LateChance): string {
     : `Late ${Math.round(late.latePercent)}% of the time`
 }
 
+/** A whole-number percentage, or a dash below the Minimum Sample. */
+export const percentText = (percent: number | null) => (percent === null ? '–' : `${Math.round(percent)}%`)
+
 /** Black or white, whichever reads better on a Line's colour (a 6-digit hex without #). */
 export function textColorOn(hex: string): '#000' | '#fff' {
   const [r, g, b] = [0, 2, 4].map((i) => {
