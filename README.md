@@ -56,7 +56,7 @@ TfNSW static GTFS ──(nightly)──────┤
 
 - **App Service B1 (Azure):** runs the API and poller. Always On is required for the poller.
 - **Azure Database for PostgreSQL Flexible Server B1ms**
-- **Vercel:** hosts the React PWA as static files. The API allows the Vercel domain through CORS ([ADR 0004](./docs/adr/0004-pwa-hosted-on-vercel.md)).
+- **Vercel:** hosts the React PWA (`web/`) as static files. A rewrite forwards `/v1` to the API, so the browser never calls Azure directly and no CORS is needed ([ADR 0004](./docs/adr/0004-pwa-hosted-on-vercel.md)).
 
 ## Engineering
 
@@ -92,3 +92,16 @@ dotnet test                               # integration tests start their own Po
 dotnet run --project tools/FeedProbe -- 60  # record 60 min of realtime feed into data/feed-samples/
 dotnet tool restore && dotnet ef migrations add <Name> --project src/TransportTracker.Api -o Data/Migrations
 ```
+
+### Website (`web/`)
+
+Prerequisites: Node 24.
+
+```sh
+cd web
+npm install
+npm run dev     # http://localhost:5173, using the deployed API
+npm test        # unit tests (Vitest)
+```
+
+The dev server forwards `/v1` to the deployed Azure API, so the backend doesn't need to run locally. To use a local API instead, run `VITE_API_PROXY=http://localhost:5199 npm run dev`.

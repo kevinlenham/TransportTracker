@@ -1,3 +1,7 @@
 # The PWA is hosted on Vercel, separately from the API on Azure
 
 The API, poller and Postgres stay on Azure, but the React PWA is deployed to Vercel as static files rather than served from App Service. The built PWA is only static assets, so Vercel serves it from a CDN for free, gives a preview deploy for every PR, and lets frontend changes ship without restarting the poller (a restart risks a gap in Observations). We considered Azure Static Web Apps, which would keep everything in one account and could put the API on the same domain. We chose Vercel for its developer experience. The consequence is that the site and the API are on different origins, so the API needs a CORS policy allowing the Vercel domain (and `localhost` for dev). API routes are prefixed with `/v1/` so the future iOS client isn't broken by changes.
+
+## Update (2026-10-05): a Vercel rewrite instead of CORS
+
+The PWA calls `/v1/...` on its own origin, and a rewrite in `web/vercel.json` forwards those requests to the API on Azure. The Vite dev server does the same with a proxy. This means the browser never makes a cross-origin request, so the API needs no CORS policy. It also means Vercel's per-PR preview deploys work without allowing each preview URL. The cost is an extra hop through Vercel on each API call, which is small for these JSON responses. The iOS client calls the API directly, and native apps aren't subject to CORS.

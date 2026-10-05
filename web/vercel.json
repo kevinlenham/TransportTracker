@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/v1/:path*",
+      "destination": "https://transporttracker-api-brerdhdygwcua7fq.australiaeast-01.azurewebsites.net/v1/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
