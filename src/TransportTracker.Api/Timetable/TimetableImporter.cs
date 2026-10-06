@@ -28,6 +28,11 @@ public class TimetableImporter(AppDbContext db, IGtfsSource source, TimeProvider
         await using var download = await source.DownloadAsync(ct);
         using var zip = new ZipArchive(download.Zip, ZipArchiveMode.Read);
 
+        // TfNSW puts every service's exact dates in calendar.txt, so calendar_dates.txt isn't imported. If it
+        // ever appears, its added and removed days would be missed, so make that visible.
+        if (zip.GetEntry("calendar_dates.txt") is not null)
+            logger.LogWarning("The feed now has calendar_dates.txt, which isn't imported. Service exceptions will be missed");
+
         var hash = await HashContentAsync(zip, ct);
         var active = await db.TimetableImports.AsNoTracking().SingleOrDefaultAsync(i => i.IsActive, ct);
         if (active?.ContentHash == hash)

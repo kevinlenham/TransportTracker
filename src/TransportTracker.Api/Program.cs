@@ -45,6 +45,8 @@ builder.Services.AddSingleton<IRealtimeFeed, TfnswRealtimeFeed>();
 builder.Services.AddSingleton<PollerStatus>();
 builder.Services.AddScoped<ObservationRecorder>();
 builder.Services.AddHostedService<PollerService>();
+builder.Services.AddScoped<ObservationRetention>();
+builder.Services.AddHostedService<ObservationRetentionService>();
 
 builder.Services.AddSingleton<IAlertsFeed, TfnswAlertsFeed>();
 builder.Services.AddSingleton<AlertStore>();
