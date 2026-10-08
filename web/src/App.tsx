@@ -5,6 +5,7 @@ import { Lines } from './pages/Lines'
 import { SavedTrips } from './pages/SavedTrips'
 import { StationDepartures } from './pages/StationDepartures'
 import { StationSearch } from './pages/StationSearch'
+import { TripDepartures } from './pages/TripDepartures'
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) => (isActive ? 'nav-link nav-link--active' : 'nav-link')
 
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/" element={<StationSearch />} />
           <Route path="/stations/:stationId" element={<StationDepartures />} />
           <Route path="/trips" element={<SavedTrips />} />
+          <Route path="/trips/:fromId/:toId" element={<TripDepartures />} />
           <Route path="/lines" element={<Lines />} />
           <Route path="/lines/:line" element={<LineDetail />} />
           <Route path="/alerts" element={<Alerts />} />

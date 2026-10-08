@@ -28,7 +28,8 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
         var board = await Board(db, live);
 
         Assert.Equal("Central Station", board.Station.Name);
-        Assert.Equal(["LIVE", "CANX", "PLAT", "SCHED"], board.Departures.Select(d => d.TripId));
+        // After today's trains the board carries on into the night and the next morning.
+        Assert.Equal(["LIVE", "CANX", "PLAT", "SCHED", "NIGHT", "OLD"], board.Departures.Take(6).Select(d => d.TripId));
 
         var delayed = board.Departures[0];
         Assert.Equal((DepartureStatus.Live, 300, At(9, 58), At(10, 3)),
@@ -81,7 +82,7 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
 
         var board = await Board(db, live: null);
 
-        Assert.Equal(["CANX", "PLAT", "SCHED"], board.Departures.Select(d => d.TripId));
+        Assert.Equal(["CANX", "PLAT", "SCHED", "NIGHT"], board.Departures.Take(4).Select(d => d.TripId));
         Assert.All(board.Departures, d => Assert.Equal(DepartureStatus.Scheduled, d.Status));
         Assert.Null(board.FeedTime);
     }
@@ -92,10 +93,77 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
         await using var db = await SeededAsync();
 
         var board = await new DepartureBoard(db, new PollerStatus(), new LateStatsQuery(db, new FixedTime(At(0, 30, day: 2))),
-            new FixedTime(At(0, 30, day: 2))).GetAsync("200060", null, 20, CancellationToken.None);
+            new FixedTime(At(0, 30, day: 2))).GetAsync("200060", null, 20, null, CancellationToken.None);
 
-        var d = Assert.Single(board!.Departures);
+        var d = board!.Departures[0];
         Assert.Equal(("NIGHT", At(0, 45, day: 2)), (d.TripId, d.ScheduledAt));
+    }
+
+    [Fact]
+    public async Task OvernightTheBoardReachesTheFirstTrainsOfTheMorning()
+    {
+        await using var db = await SeededAsync();
+
+        var board = await BoardAt(db, At(1, 30, day: 2), live: null, limit: 2);
+
+        Assert.Equal([("OLD", At(9, 30, day: 2)), ("GONE", At(9, 55, day: 2))],
+            board.Departures.Select(d => (d.TripId, d.ScheduledAt)));
+    }
+
+    [Fact]
+    public async Task LaterPagesContinueWithoutSkippingOrRepeatingTrains()
+    {
+        await using var db = await SeededAsync();
+
+        var first = await Board(db, live: null, limit: 2);
+        var second = await Board(db, live: null, limit: 2, cursor: first.Later);
+        var third = await Board(db, live: null, limit: 2, cursor: second.Later);
+
+        Assert.Equal(["CANX", "PLAT"], first.Departures.Select(d => d.TripId));
+        Assert.Equal(["SCHED", "NIGHT"], second.Departures.Select(d => d.TripId));
+        Assert.Equal(["OLD", "GONE"], third.Departures.Select(d => d.TripId)); // Tomorrow's.
+        Assert.Equal(At(9, 30, day: 2), third.Departures[0].ScheduledAt);
+    }
+
+    [Fact]
+    public async Task EarlierPagesShowTrainsThatLeftWithTheirObservations()
+    {
+        await using var db = await SeededAsync();
+        db.Observations.Add(new Observation
+        {
+            ServiceDate = new DateOnly(2026, 10, 1), TripId = "GONE", RouteId = "APS_1a", Line = "T8", DirectionId = 1,
+            StopId = "2000324", StationId = "200060", ScheduledAt = At(9, 55).ToUniversalTime(), DelaySeconds = 240,
+            Status = ObservationStatus.Passed, RecordedAt = At(10, 0).ToUniversalTime(),
+        });
+        await db.SaveChangesAsync();
+        var live = Live(new()
+        {
+            ["GONE"] = [new LiveStop("GONE", "2135238", 240, null, false)], // Already past Central.
+            ["LIVE"] = [new LiveStop("LIVE", "2000323", 300, null, false)], // Still to come, running late.
+        });
+
+        var first = await Board(db, live, limit: 2);
+        var earlier = await Board(db, live, limit: 1, cursor: first.Earlier);
+        var earliest = await Board(db, live, limit: 1, cursor: earlier.Earlier);
+
+        // Most recent first: GONE left at 09:59 (4 minutes late), OLD at 09:30 with nothing recorded.
+        var gone = Assert.Single(earlier.Departures);
+        Assert.Equal(("GONE", DepartureStatus.Departed, 240, At(9, 59), "2000324"),
+            (gone.TripId, gone.Status, gone.DelaySeconds, gone.ExpectedAt, gone.PlatformId));
+        var old = Assert.Single(earliest.Departures);
+        Assert.Equal(("OLD", DepartureStatus.Departed, (int?)null), (old.TripId, old.Status, old.DelaySeconds));
+        Assert.Null(earlier.Later);
+    }
+
+    [Fact]
+    public void CursorsRoundTripAndRejectGarbage()
+    {
+        var cursor = new BoardCursor(false, new BoardPosition(At(10, 0), "T1"));
+
+        Assert.True(BoardCursor.TryParse(cursor.Encode(), out var parsed));
+        Assert.Equal(cursor, parsed);
+        Assert.False(BoardCursor.TryParse("not-a-cursor!", out _));
+        Assert.False(BoardCursor.TryParse(new BoardCursor(false, null).Encode(), out _)); // Later needs a position.
     }
 
     [Fact]
@@ -107,7 +175,7 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
         var board = await Board(db, live: null, to: "213510");
 
         // OTHER doesn't go to Redfern, and REVERSE calls at Redfern before Central.
-        Assert.Equal(["CANX", "PLAT", "SCHED"], board.Departures.Select(d => d.TripId));
+        Assert.Equal(["CANX", "PLAT", "SCHED", "NIGHT"], board.Departures.Take(4).Select(d => d.TripId));
         Assert.Equal("Redfern Station", board.Destination!.Name);
         var arrival = board.Departures[2].Arrival!;
         Assert.Equal(("2135238", "Redfern Station Platform 8", At(10, 25), At(10, 25)),
@@ -127,7 +195,7 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
 
         var board = await Board(db, live, to: "213510");
 
-        Assert.Equal(["LIVE", "CANX", "PLAT"], board.Departures.Select(d => d.TripId)); // SCHED skips Redfern.
+        Assert.Equal(["LIVE", "CANX", "PLAT", "NIGHT"], board.Departures.Take(4).Select(d => d.TripId)); // SCHED skips Redfern.
         Assert.Equal(At(10, 3).AddMinutes(4), board.Departures[0].Arrival!.ExpectedAt);
         Assert.Equal(At(10, 22), board.Departures[2].Arrival!.ExpectedAt);
     }
@@ -138,7 +206,7 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
         await using var db = await SeededAsync();
 
         Assert.Null(await new DepartureBoard(db, new PollerStatus(), new LateStatsQuery(db, new FixedTime(Now)), new FixedTime(Now))
-            .GetAsync("2000323", null, 20, CancellationToken.None)); // A platform, not a Station.
+            .GetAsync("2000323", null, 20, null, CancellationToken.None)); // A platform, not a Station.
     }
 
     private static DateTimeOffset At(int hour, int minute, int day = 1) => new(2026, 10, day, hour, minute, 0, Aest);
@@ -167,11 +235,16 @@ public class DepartureBoardTests(PostgresFixture postgres) : IClassFixture<Postg
         trips.ToDictionary(t => t.Key, t => (IReadOnlyDictionary<string, LiveStop>)t.Value.ToDictionary(s => s.StopId)),
         (cancelled ?? []).ToHashSet());
 
-    private static async Task<Board> Board(AppDbContext db, LiveFeed? live, string? to = null)
+    private static Task<Board> Board(AppDbContext db, LiveFeed? live, string? to = null, int limit = 20, string? cursor = null) =>
+        BoardAt(db, Now, live, to, limit, cursor);
+
+    private static async Task<Board> BoardAt(AppDbContext db, DateTimeOffset now, LiveFeed? live, string? to = null,
+        int limit = 20, string? cursor = null)
     {
+        Assert.True(BoardCursor.TryParse(cursor, out var parsed));
         var poller = new PollerStatus { Live = live };
-        var board = await new DepartureBoard(db, poller, new LateStatsQuery(db, new FixedTime(Now)), new FixedTime(Now))
-            .GetAsync("200060", to, 20, CancellationToken.None);
+        var board = await new DepartureBoard(db, poller, new LateStatsQuery(db, new FixedTime(now)), new FixedTime(now))
+            .GetAsync("200060", to, limit, parsed, CancellationToken.None);
         return board!;
     }
 

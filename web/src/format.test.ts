@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LateChance } from './api'
-import { clockTime, lateText, minutesUntil, platformLabel, stationLabel, statusText, textColorOn } from './format'
+import { clockTime, dayLabel, gapText, lateText, minutesUntil, platformLabel, stationLabel, statusText, sydneyDate, textColorOn } from './format'
 
 describe('statusText', () => {
   it('rounds the delay to whole minutes', () =>
@@ -10,6 +10,12 @@ describe('statusText', () => {
     expect(statusText({ status: 'Live', delaySeconds: 59 })).toBe('On time')
     expect(statusText({ status: 'Live', delaySeconds: -30 })).toBe('On time')
     expect(statusText({ status: 'Live', delaySeconds: null })).toBe('On time')
+  })
+
+  it('says how late a train that has left was, if it was recorded', () => {
+    expect(statusText({ status: 'Departed', delaySeconds: 240 })).toBe('Departed 4 min late')
+    expect(statusText({ status: 'Departed', delaySeconds: 20 })).toBe('Departed on time')
+    expect(statusText({ status: 'Departed', delaySeconds: null })).toBe('Departed')
   })
 
   it('names the other statuses', () => {
@@ -49,6 +55,24 @@ describe('labels', () => {
   })
 
   it('shows clock times in Sydney time', () => expect(clockTime('2026-10-05T10:05:00Z')).toBe('9:05 pm'))
+})
+
+describe('days and gaps', () => {
+  // 10:30 pm Friday 9 October in Sydney (AEDT).
+  const now = Date.parse('2026-10-09T11:30:00Z')
+
+  it('labels days relative to today in Sydney', () => {
+    expect(dayLabel('2026-10-09T12:50:00Z', now)).toBe('Today') // 11:50 pm
+    expect(dayLabel('2026-10-09T13:10:00Z', now)).toBe('Tomorrow, Saturday 10 Oct') // 12:10 am
+    expect(dayLabel('2026-10-08T22:00:00Z', now)).toBe('Today') // 9 am
+    expect(dayLabel('2026-10-08T12:00:00Z', now)).toBe('Yesterday, Thursday 8 Oct')
+  })
+
+  it('compares calendar days in Sydney, not UTC', () =>
+    expect(sydneyDate('2026-10-09T13:10:00Z')).toBe('2026-10-10'))
+
+  it('describes a gap with both times', () =>
+    expect(gapText('2026-10-09T14:05:00Z', '2026-10-09T17:41:00Z')).toBe('No trains 1:05 am – 4:41 am'))
 })
 
 describe('textColorOn', () => {

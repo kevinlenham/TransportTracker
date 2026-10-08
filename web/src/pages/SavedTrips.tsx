@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Link } from 'react-router'
 import type { Station } from '../api'
 import { DepartureRow } from '../components/DepartureRow'
 import { StationPicker } from '../components/StationPicker'
@@ -54,13 +55,20 @@ function TripCard({ trip, onRemove }: { trip: SavedTrip; onRemove: () => void })
 
       {board.isPending && <p className="hint">Loading trains…</p>}
       {board.isError && <p className="error">Couldn't load trains for this trip.</p>}
-      {board.data?.departures.length === 0 && <p className="hint">No direct trains in the next 3 hours.</p>}
+      {board.data?.departures.length === 0 && (
+        <p className="hint">No direct trains in the next 24 hours. This trip may need a change of trains.</p>
+      )}
       {board.data && board.data.departures.length > 0 && (
-        <ul className="departures">
-          {board.data.departures.map((d) => (
-            <DepartureRow key={`${d.tripId}-${d.scheduledAt}`} departure={d} now={now} />
-          ))}
-        </ul>
+        <>
+          <ul className="departures">
+            {board.data.departures.map((d) => (
+              <DepartureRow key={`${d.tripId}-${d.scheduledAt}`} departure={d} now={now} />
+            ))}
+          </ul>
+          <Link to={`/trips/${trip.fromId}/${trip.toId}`} className="see-all">
+            See all trains →
+          </Link>
+        </>
       )}
     </article>
   )

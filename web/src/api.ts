@@ -2,8 +2,11 @@
 
 export type TimeBand = 'AmPeak' | 'PmPeak' | 'OffPeak' | 'Weekend'
 
-/** Scheduled: not in the realtime feed yet. Skipped: the train runs but won't stop at this Station. */
-export type DepartureStatus = 'Scheduled' | 'Live' | 'Cancelled' | 'Skipped'
+/**
+ * Scheduled: not in the realtime feed yet. Skipped: the train runs but won't stop at this Station.
+ * Departed: it has left; delaySeconds is what was recorded, or null if nothing was.
+ */
+export type DepartureStatus = 'Scheduled' | 'Live' | 'Cancelled' | 'Skipped' | 'Departed'
 
 export interface Station {
   id: string
@@ -52,6 +55,10 @@ export interface Board {
   /** When the realtime feed was last read. Null if the API hasn't polled yet. */
   feedTime: string | null
   departures: Departure[]
+  /** Pass back as `cursor` for the page of trains before this one. Null when there are no more. */
+  earlier: string | null
+  /** Pass back as `cursor` for the page of trains after this one. Null when there are no more. */
+  later: string | null
 }
 
 export class NotFoundError extends Error {}
@@ -72,15 +79,22 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
 export const searchStations = (q: string, signal?: AbortSignal) =>
   get<Station[]>(`/v1/stations?q=${encodeURIComponent(q)}`, signal)
 
-export const getDepartures = (stationId: string, signal?: AbortSignal) =>
-  get<Board>(`/v1/stations/${encodeURIComponent(stationId)}/departures`, signal)
-
-/** The next direct trains from one Station to another: a Saved Trip. */
-export const getTripDepartures = (fromId: string, toId: string, limit: number, signal?: AbortSignal) =>
-  get<Board>(
-    `/v1/stations/${encodeURIComponent(fromId)}/departures?to=${encodeURIComponent(toId)}&limit=${limit}`,
-    signal,
-  )
+/**
+ * A page of departures from a Station: the next trains, or with a cursor from a previous page, the page
+ * before or after it. With `to`, only direct trains to that Station (a Saved Trip).
+ */
+export function getDepartures(
+  stationId: string,
+  options: { to?: string; cursor?: string | null; limit?: number } = {},
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams()
+  if (options.to) params.set('to', options.to)
+  if (options.cursor) params.set('cursor', options.cursor)
+  if (options.limit) params.set('limit', String(options.limit))
+  const query = params.size ? `?${params}` : ''
+  return get<Board>(`/v1/stations/${encodeURIComponent(stationId)}/departures${query}`, signal)
+}
 
 /** Observation counts over the last 3 weeks. Percentages are null below the Minimum Sample. */
 export interface Stats {

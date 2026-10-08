@@ -32,14 +32,17 @@ public static class StationEndpoints
 
         // The next departures from a Station with Live Delays and Late %, e.g. /v1/stations/200060/departures.
         // With ?to=, only direct Trips to that Station, each with its arrival: the trains for a Saved Trip.
-        v1.MapGet("/stations/{stationId}/departures", async (string stationId, string? to, int? limit, DepartureBoard board,
-            CancellationToken ct) =>
+        // Pass a response's `earlier` or `later` back as ?cursor= for the page before or after it.
+        v1.MapGet("/stations/{stationId}/departures", async (string stationId, string? to, int? limit, string? cursor,
+            DepartureBoard board, CancellationToken ct) =>
         {
             if (to == stationId)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["to"] = ["Choose a different Station to travel to."] });
+            if (!BoardCursor.TryParse(cursor, out var parsed))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["cursor"] = ["Not a cursor from this API."] });
 
             var result = await board.GetAsync(stationId, string.IsNullOrEmpty(to) ? null : to,
-                Math.Clamp(limit ?? DefaultDepartures, 1, MaxDepartures), ct);
+                Math.Clamp(limit ?? DefaultDepartures, 1, MaxDepartures), parsed, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
         });
 

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { getTripDepartures } from './api'
+import { getDepartures } from './api'
 
 /** A rider's favourite Origin → Destination pair. Kept on the device only, so there's no login. */
 export interface SavedTrip {
@@ -70,7 +70,8 @@ const NEXT_TRAINS = 3
 /** The next direct trains for a Saved Trip. Shared by the My trips and Alerts pages, so they read one cache. */
 export const tripBoardQuery = (trip: SavedTrip) => ({
   queryKey: ['trip', trip.fromId, trip.toId],
-  queryFn: ({ signal }: { signal: AbortSignal }) => getTripDepartures(trip.fromId, trip.toId, NEXT_TRAINS, signal),
+  queryFn: ({ signal }: { signal: AbortSignal }) =>
+    getDepartures(trip.fromId, { to: trip.toId, limit: NEXT_TRAINS }, signal),
   refetchInterval: 30_000,
 })
 

@@ -9,6 +9,27 @@ const sydneyClock = new Intl.DateTimeFormat('en-AU', {
 /** Clock time in Sydney, e.g. "9:05 pm", whatever time zone the rider's device is in. */
 export const clockTime = (iso: string) => sydneyClock.format(new Date(iso))
 
+const sydneyDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }) // YYYY-MM-DD
+const sydneyWeekday = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', weekday: 'long', day: 'numeric', month: 'short' })
+
+/** The calendar day in Sydney, as YYYY-MM-DD, for telling when a list crosses midnight. */
+export const sydneyDate = (iso: string | number) => sydneyDay.format(new Date(iso))
+
+/** "Today", "Tomorrow, Friday 9 Oct", "Yesterday, …", or the weekday, for a day divider. */
+export function dayLabel(iso: string, now: number): string {
+  const day = Date.parse(`${sydneyDate(iso)}T00:00:00Z`)
+  const today = Date.parse(`${sydneyDate(now)}T00:00:00Z`)
+  const offset = Math.round((day - today) / 86_400_000)
+  const date = sydneyWeekday.format(new Date(iso))
+  if (offset === 0) return 'Today'
+  if (offset === 1) return `Tomorrow, ${date}`
+  if (offset === -1) return `Yesterday, ${date}`
+  return date
+}
+
+/** "No trains 1:05 am – 4:41 am" for a long gap between two departures. */
+export const gapText = (fromIso: string, toIso: string) => `No trains ${clockTime(fromIso)} – ${clockTime(toIso)}`
+
 /** "Now", or whole minutes until the train is expected, e.g. "4 min". */
 export function minutesUntil(iso: string, now: number): string {
   const minutes = Math.floor((Date.parse(iso) - now) / 60_000)
@@ -33,6 +54,9 @@ export function statusText(d: Pick<Departure, 'status' | 'delaySeconds'>): strin
       return 'Not stopping here'
     case 'Scheduled':
       return 'Scheduled'
+    case 'Departed':
+      if (d.delaySeconds === null) return 'Departed'
+      return d.delaySeconds >= 60 ? `Departed ${Math.round(d.delaySeconds / 60)} min late` : 'Departed on time'
     case 'Live':
       return d.delaySeconds !== null && d.delaySeconds >= 60
         ? `Delayed ${Math.round(d.delaySeconds / 60)} min`

@@ -285,3 +285,31 @@ button.primary {
 .alert details { margin-top: 4px; font-size: 0.9rem; }
 .alert summary { cursor: pointer; color: var(--accent); }
 .alert-description { white-space: pre-line; margin: 6px 0; }
+
+/* Paging through a departure board */
+.load-more {
+  display: block;
+  width: 100%;
+  margin: 12px 0;
+  padding: 10px;
+  font-weight: 600;
+  background: var(--surface);
+}
+
+.load-more:hover:not(:disabled) { background: var(--bg); }
+
+.divider {
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--bg);
+}
+
+.departures .divider + .departure, .departure + .divider { border-top: 1px solid var(--border); }
+.divider--now { color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+.divider--gap { font-style: italic; font-weight: 400; }
+
+.departure--past .departure-headsign, .departure--past .line-badge { opacity: 0.6; }
+
+.see-all { display: inline-block; margin-top: 8px; font-size: 0.9rem; text-decoration: none; }
