@@ -1,10 +1,10 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { getDepartures, NotFoundError, type Board } from '../api'
 import { boardRows } from '../boardRows'
 import { clockTime } from '../format'
-import { useNow } from '../hooks'
+import { useKeepInPlace, useNow } from '../hooks'
 import { DepartureRow } from './DepartureRow'
 
 const PAGE_SIZE = 20
@@ -27,6 +27,10 @@ export function DepartureList({ stationId, to, header }: { stationId: string; to
     refetchInterval: REFRESH_MS,
     retry: (count, error) => !(error instanceof NotFoundError) && count < 3,
   })
+
+  // Earlier trains go in above what the rider is looking at, which must stay where it is on screen.
+  const listRef = useRef<HTMLUListElement>(null)
+  const rememberPosition = useKeepInPlace(listRef, board.data?.pages.length)
 
   if (board.isPending) return <p className="hint">Loading departures…</p>
   if (board.isError) {
@@ -54,7 +58,14 @@ export function DepartureList({ stationId, to, header }: { stationId: string; to
       </p>
 
       {board.hasPreviousPage && (
-        <button className="load-more" onClick={() => board.fetchPreviousPage()} disabled={board.isFetchingPreviousPage}>
+        <button
+          className="load-more"
+          disabled={board.isFetchingPreviousPage}
+          onClick={() => {
+            rememberPosition()
+            void board.fetchPreviousPage()
+          }}
+        >
           {board.isFetchingPreviousPage ? 'Loading…' : '↑ Show earlier trains'}
         </button>
       )}
@@ -62,10 +73,10 @@ export function DepartureList({ stationId, to, header }: { stationId: string; to
       {rows.length === 0 ? (
         <p className="hint">No trains in the next 24 hours.</p>
       ) : (
-        <ul className="departures">
+        <ul className="departures" ref={listRef}>
           {rows.map((row) =>
             row.kind === 'train' ? (
-              <DepartureRow key={row.key} departure={row.departure} now={now} past={row.past} />
+              <DepartureRow key={row.key} dataKey={row.key} departure={row.departure} now={now} past={row.past} />
             ) : (
               <li key={row.key} className={`divider divider--${row.kind}`}>
                 {row.kind === 'now' ? 'Now' : row.label}
