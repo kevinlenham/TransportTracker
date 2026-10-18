@@ -1,6 +1,10 @@
 # Claude Code local settings
 .claude/settings.local.json
 
+# Installed agent skills
+.agents/skills/
+skills-lock.json
+
 # Secrets
 .env
 .env.*
