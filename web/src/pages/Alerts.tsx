@@ -1,103 +1,110 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link } from 'react-router'
-import { getAlerts, getLines, type Departure, type ServiceAlert } from '../api'
+import type { ServiceAlert } from '../api'
 import { LineBadge } from '../components/LineBadge'
-import { clockTime, stationLabel, statusText } from '../format'
-import { tripBoardQuery, tripKey, useSavedTrips } from '../savedTrips'
-
-/** A train counts as a problem on the Alerts page once it would count as Late (over 2 minutes behind). */
-const LATE_AFTER_SECONDS = 120
+import { Band, Content } from '../components/Page'
+import { clockTime, stationLabel, statusText, statusTone } from '../format'
+import { linesQuery } from '../queries'
+import { tripKey } from '../savedTrips'
+import { useTripAlerts } from '../tripAlerts'
 
 export function Alerts() {
-  const { trips } = useSavedTrips()
-  const boards = useQueries({ queries: trips.map(tripBoardQuery) })
-
-  // Alerts for the Saved Trips' Stations and the Lines their trains run on, plus network-wide ones.
-  const stations = [...new Set(trips.flatMap((t) => [t.fromId, t.toId]))]
-  const lines = [...new Set(boards.flatMap((b) => b.data?.departures.map((d) => d.line) ?? []).filter((l) => l !== null))]
-  const filtered = trips.length > 0
-  const alerts = useQuery({
-    queryKey: ['alerts', stations, lines],
-    queryFn: ({ signal }) => getAlerts(filtered ? { stations, lines } : {}, signal),
-    refetchInterval: 60_000,
-  })
-
-  const allLines = useQuery({ queryKey: ['lines'], queryFn: ({ signal }) => getLines(signal), staleTime: 5 * 60_000 })
+  const { filtered, alerts, problems } = useTripAlerts()
+  const allLines = useQuery(linesQuery)
   const colors = new Map(allLines.data?.map((l) => [l.line, l.color]))
 
-  const problems = trips.flatMap((trip, i) =>
-    (boards[i]?.data?.departures ?? []).filter(isProblem).map((d) => ({ trip, departure: d })),
-  )
-
   return (
-    <section>
-      <h1 className="page-title">Alerts</h1>
+    <>
+      <Band title="Alerts">
+        <p className="band-text">
+          {filtered
+            ? 'Delays and cancellations on your saved trips, and service alerts for their stations and lines.'
+            : 'Service alerts from Transport for NSW.'}
+          {alerts.data?.fetchedAt && <span className="muted"> Updated {clockTime(alerts.data.fetchedAt)}.</span>}
+        </p>
+      </Band>
 
-      {filtered && (
-        <>
-          <h2 className="section-title">Your trips</h2>
-          {problems.length === 0 ? (
-            <p className="hint">No delays or cancellations on the next trains for your trips.</p>
-          ) : (
-            <ul className="alert-list">
-              {problems.map(({ trip, departure: d }) => (
-                <li key={`${tripKey(trip)}-${d.tripId}`} className="alert alert--trip">
-                  <LineBadge line={d.line} color={d.lineColor} />
-                  <div>
-                    <strong>{statusText(d)}</strong>: {clockTime(d.scheduledAt)} {stationLabel(trip.fromName)} to{' '}
-                    {stationLabel(trip.toName)}
-                    {d.headsign && <span className="muted"> ({d.headsign} train)</span>}
-                  </div>
-                </li>
+      <Content>
+        {filtered && (
+          <section aria-labelledby="your-trips">
+            <h2 id="your-trips" className="section-title">
+              Your trips
+            </h2>
+            {problems.length === 0 ? (
+              <p className="hint">No delays or cancellations on the next trains for your trips.</p>
+            ) : (
+              <ul className="plain-list">
+                {problems.map(({ trip, departure: d }) => (
+                  <li key={`${tripKey(trip)}-${d.tripId}`}>
+                    <LineBadge line={d.line} color={d.lineColor} />
+                    <div>
+                      <strong className={`tone-${statusTone(d)}`}>{statusText(d)}</strong>
+                      <div>
+                        {clockTime(d.scheduledAt)} {stationLabel(trip.fromName)} to {stationLabel(trip.toName)}
+                        {d.headsign && <span className="muted"> ({d.headsign} train)</span>}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
+        <section aria-labelledby="service-alerts">
+          <h2 id="service-alerts" className="section-title">
+            Service alerts
+          </h2>
+          {!filtered && (
+            <p className="hint">
+              <Link to="/trips">Save a trip</Link> to see only the alerts that affect you.
+            </p>
+          )}
+          {alerts.isPending && <p className="hint">Loading alerts…</p>}
+          {alerts.isError && <p className="error">Couldn't load service alerts.</p>}
+          {alerts.data?.alerts.length === 0 && <p className="hint">No current service alerts.</p>}
+          {alerts.data && alerts.data.alerts.length > 0 && (
+            <ul className="plain-list">
+              {alerts.data.alerts.map((a) => (
+                <AlertItem key={a.id} alert={a} colors={colors} />
               ))}
             </ul>
           )}
-        </>
-      )}
-
-      <h2 className="section-title">{filtered ? 'Service alerts for your trips' : 'All service alerts'}</h2>
-      {!filtered && (
-        <p className="hint">
-          <Link to="/trips">Save a trip</Link> to see only the alerts that affect you.
-        </p>
-      )}
-      {alerts.isPending && <p className="hint">Loading alerts…</p>}
-      {alerts.isError && <p className="error">Couldn't load service alerts.</p>}
-      {alerts.data?.alerts.length === 0 && <p className="hint">No current service alerts.</p>}
-      {alerts.data && alerts.data.alerts.length > 0 && (
-        <ul className="alert-list">
-          {alerts.data.alerts.map((a) => (
-            <AlertItem key={a.id} alert={a} colors={colors} />
-          ))}
-        </ul>
-      )}
-    </section>
+        </section>
+      </Content>
+    </>
   )
 }
 
-function isProblem(d: Departure) {
-  return d.status === 'Cancelled' || d.status === 'Skipped' || (d.status === 'Live' && (d.delaySeconds ?? 0) > LATE_AFTER_SECONDS)
-}
-
 function AlertItem({ alert: a, colors }: { alert: ServiceAlert; colors: Map<string, string | null> }) {
+  const [open, setOpen] = useState(false)
+  const detailsId = `alert-${a.id}`
+
   return (
-    <li className="alert">
+    <li>
       <div className="alert-lines">
         {a.networkWide ? <span className="muted">All lines</span> : a.lines.map((l) => <LineBadge key={l} line={l} color={colors.get(l) ?? null} />)}
       </div>
-      <div>
-        <strong>{a.header}</strong>
-        {a.description && (
-          <details>
-            <summary>Details</summary>
-            <p className="alert-description">{a.description}</p>
-          </details>
+      <div className="alert-body">
+        <div className="alert-header">{a.header}</div>
+        {open && a.description && (
+          <p className="alert-description" id={detailsId}>
+            {a.description}
+          </p>
         )}
-        {a.url && (
-          <a href={a.url} target="_blank" rel="noreferrer" className="hint">
-            More on transportnsw.info
-          </a>
-        )}
+        <div className="alert-actions">
+          {a.description && (
+            <button type="button" className="link-button" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(!open)}>
+              {open ? 'Hide details' : 'Details'}
+            </button>
+          )}
+          {a.url && (
+            <a href={a.url} target="_blank" rel="noreferrer">
+              More on transportnsw.info
+            </a>
+          )}
+        </div>
       </div>
     </li>
   )
