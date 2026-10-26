@@ -21,11 +21,11 @@ export function isPast(d: Departure, now: number) {
 /**
  * The departures from every loaded page, in order and without repeats (pages can overlap after a
  * refresh), with dividers: "Now" between trains that have gone and those to come, the day when the
- * list crosses midnight, and long gaps such as overnight.
+ * list crosses midnight, and long gaps such as overnight. With `keep`, only the trains it accepts.
  */
-export function boardRows(pages: Board[], now: number): BoardRow[] {
+export function boardRows(pages: Board[], now: number, keep: (d: Departure) => boolean = () => true): BoardRow[] {
   const seen = new Set<string>()
-  const departures = pages.flatMap((p) => p.departures).filter((d) => {
+  const departures = pages.flatMap((p) => p.departures).filter(keep).filter((d) => {
     const key = departureKey(d)
     if (seen.has(key)) return false
     seen.add(key)

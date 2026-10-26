@@ -44,3 +44,11 @@ describe('boardRows', () => {
     expect(shape([page(train('A', '2026-10-09T12:00:00Z', 'Cancelled'), train('B', '2026-10-09T12:40:00Z'))]))
       .toEqual(['A', '[now]', 'B']))
 })
+
+describe('boardRows with a filter', () => {
+  it('keeps only the trains it accepts, with dividers worked out from those', () => {
+    const t2 = { ...train('B', '2026-10-09T17:41:00Z'), line: 'T2' }
+    expect(boardRows([page(train('A', '2026-10-09T12:40:00Z'), t2)], now, (d) => d.line === 'T2').map((r) => r.kind))
+      .toEqual(['day', 'train'])
+  })
+})
