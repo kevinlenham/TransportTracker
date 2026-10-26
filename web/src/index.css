@@ -584,9 +584,28 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* ---------- Text pages ---------- */
 
-.prose { max-width: 70ch; }
-.prose h2 { font-size: 20px; margin: 24px 0 8px; }
-.prose p, .prose ul { margin: 0 0 12px; }
+.info-intro { font-size: 18px; }
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--columns, 2), minmax(0, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 760px) {
+  .info-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.info-block {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.info-block p, .info-block ul { margin: 0 0 12px; color: var(--text-2); }
+.info-block > :last-child { margin-bottom: 0; }
+.info-block ul { padding-left: 20px; }
 
 /* ---------- Mobile: bottom tab bar, stacked tables ---------- */
 
