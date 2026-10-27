@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import type { Station } from '../api'
@@ -8,8 +8,8 @@ import { Band, Content } from '../components/Page'
 import { StationPicker } from '../components/StationPicker'
 import { lineName, percentText, stationLabel } from '../format'
 import { useNow } from '../hooks'
-import { inLineOrder, lineReportQuery, linesQuery } from '../queries'
-import { isHighLate, stationStats } from '../stats'
+import { inLineOrder, linesQuery, stationLinesQuery } from '../queries'
+import { isHighLate } from '../stats'
 import { useBoard } from '../useBoard'
 
 /** Every train leaving one Station, optionally only one Line's. The Station is in the path, the Line in ?line=. */
@@ -26,7 +26,6 @@ export function StationDepartures() {
   const lineOrder = allLines.data?.map((l) => l.line)
   const departures = board.data?.pages.flatMap((p) => p.departures) ?? []
   const boardLines = inLineOrder([...new Set(departures.map((d) => d.line).filter((l) => l !== null))], lineOrder)
-  const colors = new Map(departures.map((d) => [d.line, d.lineColor]))
 
   // The form starts from what's shown, until the rider changes it.
   const [picked, setPicked] = useState<Station | null | undefined>(undefined)
@@ -93,9 +92,9 @@ export function StationDepartures() {
               </p>
             </section>
 
-            {boardStation && boardLines.length > 0 && (
+            {boardStation && (
               <aside className="sidebar">
-                <LinesAtStation stationId={boardStation.id} name={stationLabel(boardStation.name)} lines={boardLines} colors={colors} />
+                <LinesAtStation stationId={boardStation.id} name={stationLabel(boardStation.name)} />
               </aside>
             )}
           </div>
@@ -105,14 +104,11 @@ export function StationDepartures() {
   )
 }
 
-/** Each Line's Late % at this Station over 3 weeks, both directions and all times together. */
-function LinesAtStation({ stationId, name, lines, colors }: {
-  stationId: string
-  name: string
-  lines: string[]
-  colors: Map<string | null, string | null>
-}) {
-  const reports = useQueries({ queries: lines.map(lineReportQuery) })
+/** Each Line's Late % at this Station over 3 weeks, both directions and all times together. One request. */
+function LinesAtStation({ stationId, name }: { stationId: string; name: string }) {
+  const lines = useQuery(stationLinesQuery(stationId))
+
+  if (lines.isPending || lines.isError || lines.data.length === 0) return null
 
   return (
     <section>
@@ -130,21 +126,15 @@ function LinesAtStation({ stationId, name, lines, colors }: {
           </tr>
         </thead>
         <tbody>
-          {lines.map((line, i) => {
-            const report = reports[i]
-            const stats = report.data ? stationStats(report.data, stationId) : null
-            return (
-              <tr key={line}>
-                <th scope="row">
-                  <LineBadge line={line} color={colors.get(line) ?? null} />
-                </th>
-                <td className={`num${isHighLate(stats?.latePercent ?? null) ? ' tone-warn' : ''}`}>
-                  {report.isPending ? '…' : report.isError ? '?' : percentText(stats?.latePercent ?? null)}
-                </td>
-                <td className="num muted">{stats?.observed ?? ''}</td>
-              </tr>
-            )
-          })}
+          {lines.data.map((l) => (
+            <tr key={l.line}>
+              <th scope="row">
+                <LineBadge line={l.line} color={l.color} />
+              </th>
+              <td className={`num${isHighLate(l.stats.latePercent) ? ' tone-warn' : ''}`}>{percentText(l.stats.latePercent)}</td>
+              <td className="num muted">{l.stats.observed}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
       <p className="footnote">Last 3 weeks, all times of day. A dash means fewer than 20 trains so far.</p>

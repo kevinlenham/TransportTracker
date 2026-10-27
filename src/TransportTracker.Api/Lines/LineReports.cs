@@ -4,7 +4,8 @@ using TransportTracker.Api.Stats;
 
 namespace TransportTracker.Api.Lines;
 
-public record LineSummary(string Line, string? Color, BucketStats Stats);
+/// <summary>A Line's stats, overall and per Time Band: across the network, or at one Station (both Directions together).</summary>
+public record LineSummary(string Line, string? Color, BucketStats Stats, IReadOnlyList<TimeBandStats> TimeBands);
 
 public record TimeBandStats(TimeBand TimeBand, BucketStats Stats);
 
@@ -31,9 +32,39 @@ public class LineReports(AppDbContext db, LateStatsQuery stats)
         var lines = await LinesAsync(ct);
         var byLine = await stats.ByLineAsync(ct);
         return lines
-            .Select(l => new LineSummary(l.Key, l.Value, byLine.GetValueOrDefault(l.Key, BucketStats.Empty)))
+            .Select(l => Summary(l.Key, l.Value, b => byLine.GetValueOrDefault((l.Key, b), BucketStats.Empty)))
             .OrderBy(l => SortKey(l.Line))
             .ToList();
+    }
+
+    /// <summary>
+    /// Each Line with Observations at a Station, both Directions together, in Line order. One query, so a
+    /// page can show every Line at a Station without loading each Line's report. Null when the Station
+    /// isn't in the active Timetable.
+    /// </summary>
+    public async Task<IReadOnlyList<LineSummary>?> AtStationAsync(string stationId, CancellationToken ct)
+    {
+        var known = await db.Stops.AsNoTracking().AnyAsync(s => s.StopId == stationId && s.LocationType == 1
+            && db.TimetableImports.Any(i => i.IsActive && i.Id == s.ImportId), ct);
+        if (!known) return null;
+
+        var lines = await LinesAsync(ct);
+        var buckets = await stats.ForStationAsync(stationId, ct);
+        return buckets.Keys
+            .Select(k => k.Line)
+            .OfType<string>()
+            .Distinct()
+            .Where(lines.ContainsKey)
+            .Select(line => Summary(line, lines[line], b => BucketStats.Sum(
+                buckets.Where(kv => kv.Key.Line == line && kv.Key.TimeBand == b).Select(kv => kv.Value))))
+            .OrderBy(l => SortKey(l.Line))
+            .ToList();
+    }
+
+    private static LineSummary Summary(string line, string? color, Func<TimeBand, BucketStats> inBand)
+    {
+        var bands = BandOrder.Select(b => new TimeBandStats(b, inBand(b))).ToList();
+        return new LineSummary(line, color, BucketStats.Sum(bands.Select(b => b.Stats)), bands);
     }
 
     /// <summary>Null when the Line isn't in the active Timetable.</summary>

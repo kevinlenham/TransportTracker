@@ -1,4 +1,4 @@
-import { getLine, getLines, NotFoundError } from './api'
+import { getLine, getLines, getStationLines, NotFoundError } from './api'
 
 /** Line stats change slowly (they cover 3 weeks), so they're kept a few minutes before reloading. */
 const STATS_STALE_MS = 5 * 60_000
@@ -8,6 +8,12 @@ export const linesQuery = {
   queryFn: ({ signal }: { signal: AbortSignal }) => getLines(signal),
   staleTime: STATS_STALE_MS,
 }
+
+export const stationLinesQuery = (stationId: string) => ({
+  queryKey: ['station-lines', stationId],
+  queryFn: ({ signal }: { signal: AbortSignal }) => getStationLines(stationId, signal),
+  staleTime: STATS_STALE_MS,
+})
 
 export const lineReportQuery = (line: string) => ({
   queryKey: ['line', line],

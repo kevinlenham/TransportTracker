@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using TransportTracker.Api.Alerts;
 using TransportTracker.Api.Data;
 using TransportTracker.Api.Lines;
@@ -14,8 +15,12 @@ using TransportTracker.Api.Timetable;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton(TimeProvider.System);
+// The Azure B1ms database allows about 50 connections. Npgsql's default pool of 100 let a burst of requests
+// use them all up, and the rest failed. With a smaller pool they wait for a free connection instead, and
+// the old and new instances still fit together during a deploy.
+var postgres = new NpgsqlConnectionStringBuilder(builder.Configuration.GetConnectionString("Postgres")) { MaxPoolSize = 20 };
 builder.Services.AddDbContext<AppDbContext>(o => o
-    .UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
+    .UseNpgsql(postgres.ConnectionString)
     .UseSnakeCaseNamingConvention());
 
 builder.Services.Configure<TfnswOptions>(builder.Configuration.GetSection(TfnswOptions.SectionName));

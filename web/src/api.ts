@@ -106,10 +106,12 @@ export interface Stats {
   cancellationPercent: number | null
 }
 
+/** A Line's stats, overall and per Time Band: across the network, or at one Station (both directions together). */
 export interface LineSummary {
   line: string
   color: string | null
   stats: Stats
+  timeBands: { timeBand: TimeBand; stats: Stats }[]
 }
 
 export interface LineStation {
@@ -135,6 +137,10 @@ export interface LineReport {
 }
 
 export const getLines = (signal?: AbortSignal) => get<LineSummary[]>('/v1/lines', signal)
+
+/** Each Line with stats at a Station, in Line order. */
+export const getStationLines = (stationId: string, signal?: AbortSignal) =>
+  get<LineSummary[]>(`/v1/stations/${encodeURIComponent(stationId)}/lines`, signal)
 
 export const getLine = (line: string, signal?: AbortSignal) =>
   get<LineReport>(`/v1/lines/${encodeURIComponent(line)}`, signal)

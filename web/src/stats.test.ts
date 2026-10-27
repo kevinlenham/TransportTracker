@@ -1,51 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import type { LineReport, Stats, TimeBand } from './api'
-import { lineBandStats, stationBandStats, stationStats, sumStats, timeBandAt } from './stats'
+import { stationBandStats, timeBandAt } from './stats'
 
-const counts = (observed: number, late: number, timetabled = observed, cancelled = 0): Stats => ({
-  observed, late, timetabled, cancelled, latePercent: null, cancellationPercent: null,
+const observed = (n: number): Stats => ({
+  observed: n, late: 0, timetabled: n, cancelled: 0, latePercent: null, cancellationPercent: null,
 })
 
-const bands = (am: Stats, pm: Stats, off: Stats, weekend: Stats) =>
-  (['AmPeak', 'PmPeak', 'OffPeak', 'Weekend'] as TimeBand[]).map((timeBand, i) => ({ timeBand, stats: [am, pm, off, weekend][i] }))
-
-const station = (stationId: string, b: ReturnType<typeof bands>) => ({
-  stationId, name: stationId, stats: sumStats(b.map((x) => x.stats)), timeBands: b,
+const station = (stationId: string, am: number, pm: number) => ({
+  stationId,
+  name: stationId,
+  stats: observed(am + pm),
+  timeBands: (['AmPeak', 'PmPeak', 'OffPeak', 'Weekend'] as TimeBand[]).map((timeBand, i) => ({ timeBand, stats: observed([am, pm, 0, 0][i]) })),
 })
-
-const none = counts(0, 0)
 
 const report: LineReport = {
   line: 'T1',
   color: null,
-  stats: counts(0, 0),
+  stats: observed(0),
   directions: [
-    { directionId: 0, headsigns: [], stats: none, stations: [station('A', bands(counts(30, 6), counts(10, 1), none, none)), station('B', bands(counts(10, 2), none, none, none))] },
-    { directionId: 1, headsigns: [], stats: none, stations: [station('A', bands(counts(20, 4, 25, 5), none, none, none))] },
+    { directionId: 0, headsigns: [], stats: observed(0), stations: [station('A', 30, 10)] },
+    { directionId: 1, headsigns: [], stats: observed(0), stations: [station('A', 20, 0)] },
   ],
 }
 
-describe('sumStats', () => {
-  it('adds the counts and works out percentages like the API', () =>
-    expect(sumStats([counts(30, 6), counts(10, 1, 12, 2)])).toEqual({
-      observed: 40, late: 7, timetabled: 42, cancelled: 2, latePercent: 17.5, cancellationPercent: 4.8,
-    }))
-
-  it('leaves percentages out below the Minimum Sample', () =>
-    expect(sumStats([counts(19, 5)])).toMatchObject({ latePercent: null, cancellationPercent: null }))
-})
-
-describe('line stats from a report', () => {
-  it('combines both Directions at a Station', () =>
-    expect(stationStats(report, 'A')).toMatchObject({ observed: 60, late: 11, timetabled: 65, cancelled: 5 }))
-
-  it('says when a Line does not stop at a Station', () => expect(stationStats(report, 'Z')).toBeNull())
-
+describe('stationBandStats', () => {
   it('gives one Direction at a Station by Time Band', () =>
-    expect(stationBandStats(report, 'A', 0)?.map((b) => b.stats.observed)).toEqual([30, 10, 0, 0]))
+    expect(stationBandStats(report, 'A', 1)?.map((b) => b.stats.observed)).toEqual([20, 0, 0, 0]))
 
-  it('adds a whole Line up for one Time Band', () =>
-    expect(lineBandStats(report, 'AmPeak')).toMatchObject({ observed: 60, late: 12, latePercent: 20 }))
+  it('says when the Line does not stop there in that Direction', () => {
+    expect(stationBandStats(report, 'Z', 0)).toBeNull()
+    expect(stationBandStats(report, 'A', null)).toBeNull()
+  })
 })
 
 describe('timeBandAt', () => {

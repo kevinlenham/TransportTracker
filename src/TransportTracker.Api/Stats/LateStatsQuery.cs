@@ -37,7 +37,7 @@ public class LateStatsQuery(AppDbContext db, TimeProvider time)
 
     // Columns are snake_case because the naming convention maps these records' properties too.
     private record StationRow(string? Line, short? DirectionId, string TimeBand, int Observed, int Late, int Timetabled, int Cancelled);
-    private record LineRow(string Line, int Observed, int Late, int Timetabled, int Cancelled);
+    private record LineRow(string Line, string TimeBand, int Observed, int Late, int Timetabled, int Cancelled);
     private record LineStationRow(string StationId, short? DirectionId, string TimeBand, int Observed, int Late, int Timetabled, int Cancelled);
     private record HeadsignRow(short? DirectionId, string? Headsign, int Count);
 
@@ -59,20 +59,22 @@ public class LateStatsQuery(AppDbContext db, TimeProvider time)
             r => new BucketStats(r.Observed, r.Late, r.Timetabled, r.Cancelled));
     }
 
-    /// <summary>Each Line across the whole network.</summary>
-    public async Task<IReadOnlyDictionary<string, BucketStats>> ByLineAsync(CancellationToken ct)
+    /// <summary>Each Line across the whole network, per Time Band.</summary>
+    public async Task<IReadOnlyDictionary<(string Line, TimeBand TimeBand), BucketStats>> ByLineAsync(CancellationToken ct)
     {
         var (since, until) = CurrentWindow();
         var rows = await db.Database.SqlQuery<LineRow>($"""
-            SELECT line,
+            SELECT line, time_band,
                 (count(*) FILTER (WHERE observed))::int AS observed, (count(*) FILTER (WHERE late))::int AS late,
                 count(*)::int AS timetabled, (count(*) FILTER (WHERE cancelled))::int AS cancelled
             FROM observation_stats
             WHERE line IS NOT NULL AND scheduled_at >= {since} AND scheduled_at < {until}
-            GROUP BY 1
+            GROUP BY 1, 2
             """).ToListAsync(ct);
 
-        return rows.ToDictionary(r => r.Line, r => new BucketStats(r.Observed, r.Late, r.Timetabled, r.Cancelled));
+        return rows.ToDictionary(
+            r => (r.Line, Enum.Parse<TimeBand>(r.TimeBand)),
+            r => new BucketStats(r.Observed, r.Late, r.Timetabled, r.Cancelled));
     }
 
     /// <summary>A Line's Stats Buckets, keyed by Station, Direction and Time Band.</summary>

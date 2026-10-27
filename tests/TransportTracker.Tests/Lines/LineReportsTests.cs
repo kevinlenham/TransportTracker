@@ -29,6 +29,42 @@ public class LineReportsTests(PostgresFixture postgres) : IClassFixture<Postgres
         Assert.Equal(("00954C", 30, 5), (t8.Color, t8.Stats.Observed, t8.Stats.Late));
         Assert.Equal(16.7, t8.Stats.LatePercent);
         Assert.Null(lines[0].Stats.LatePercent);
+
+        // Each Time Band too, in a fixed order, so a page can switch bands without loading every Line's report.
+        Assert.Equal([TimeBand.AmPeak, TimeBand.PmPeak, TimeBand.OffPeak, TimeBand.Weekend], t8.TimeBands.Select(b => b.TimeBand));
+        Assert.Equal([10, 0, 20, 0], t8.TimeBands.Select(b => b.Stats.Observed));
+        Assert.Equal(25.0, t8.TimeBands[2].Stats.LatePercent);
+        Assert.All(lines[0].TimeBands, b => Assert.Equal(0, b.Stats.Observed));
+    }
+
+    [Fact]
+    public async Task LinesAtAStationCombineBothDirectionsPerTimeBand()
+    {
+        await using var db = await SeededAsync();
+        Observe(db, "T8", "213510", 1, OffPeak, count: 20, late: 5);
+        Observe(db, "T8", "213510", 0, OffPeak.AddHours(1), count: 10, late: 1); // Still off-peak.
+        Observe(db, "T2", "213510", 0, AmPeak, count: 3, late: 0);
+        Observe(db, "T8", "200060", 0, OffPeak, count: 5, late: 5); // Another Station.
+        await db.SaveChangesAsync();
+
+        var lines = (await Reports(db).AtStationAsync("213510", CancellationToken.None))!;
+
+        Assert.Equal(["T2", "T8"], lines.Select(l => l.Line));
+        var t8 = lines[1];
+        Assert.Equal(("00954C", 30, 6), (t8.Color, t8.Stats.Observed, t8.Stats.Late));
+        Assert.Equal((30, 6), (t8.TimeBands[2].Stats.Observed, t8.TimeBands[2].Stats.Late));
+        Assert.Equal(20.0, t8.TimeBands[2].Stats.LatePercent);
+        Assert.Equal(3, lines[0].TimeBands[0].Stats.Observed);
+    }
+
+    [Fact]
+    public async Task LinesAtAnUnknownStationAreNotFound()
+    {
+        await using var db = await SeededAsync();
+
+        Assert.Null(await Reports(db).AtStationAsync("999999", CancellationToken.None));
+        Assert.Null(await Reports(db).AtStationAsync("2135238", CancellationToken.None)); // A platform, not a Station.
+        Assert.Empty((await Reports(db).AtStationAsync("214510", CancellationToken.None))!); // Known, but nothing observed yet.
     }
 
     [Fact]

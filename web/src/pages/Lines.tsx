@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router'
 import type { TimeBand } from '../api'
 import { LineBadge } from '../components/LineBadge'
@@ -6,8 +6,8 @@ import { Band, Content } from '../components/Page'
 import { TimeBandTabs } from '../components/TimeBandTabs'
 import { lineName, percentText, timeBandHours } from '../format'
 import { useNow } from '../hooks'
-import { lineReportQuery, linesQuery } from '../queries'
-import { isHighLate, lineBandStats, TIME_BANDS, timeBandAt } from '../stats'
+import { linesQuery } from '../queries'
+import { isHighLate, TIME_BANDS, timeBandAt } from '../stats'
 
 /** Each Line's Late % and Cancellation % in one Time Band (?band=), the current one to start with. */
 export function Lines() {
@@ -16,9 +16,8 @@ export function Lines() {
   const asked = params.get('band') as TimeBand | null
   const band: TimeBand = asked && TIME_BANDS.includes(asked) ? asked : timeBandAt(now)
 
+  // One request has every Line in every Time Band, so switching tabs needs no loading.
   const lines = useQuery(linesQuery)
-  // TODO(backend): /v1/lines could return each Time Band, to save loading every Line's full report here.
-  const reports = useQueries({ queries: (lines.data ?? []).map((l) => lineReportQuery(l.line)) })
 
   return (
     <>
@@ -48,10 +47,8 @@ export function Lines() {
               </tr>
             </thead>
             <tbody>
-              {lines.data.map((l, i) => {
-                const report = reports[i]
-                const stats = report?.data ? lineBandStats(report.data, band) : null
-                const loading = report?.isPending ? '…' : report?.isError ? '?' : '–'
+              {lines.data.map((l) => {
+                const stats = l.timeBands.find((b) => b.timeBand === band)?.stats ?? null
                 return (
                   <tr key={l.line}>
                     <th scope="row">
@@ -61,10 +58,10 @@ export function Lines() {
                       </Link>
                     </th>
                     <td data-label="Late" className={`num${isHighLate(stats?.latePercent ?? null) ? ' tone-warn' : ''}`}>
-                      {stats ? percentText(stats.latePercent) : loading}
+                      {percentText(stats?.latePercent ?? null)}
                     </td>
                     <td data-label="Cancelled" className="num">
-                      {stats ? percentText(stats.cancellationPercent) : loading}
+                      {percentText(stats?.cancellationPercent ?? null)}
                     </td>
                     <td data-label="Trains counted" className="num muted">
                       {stats?.timetabled ?? ''}
